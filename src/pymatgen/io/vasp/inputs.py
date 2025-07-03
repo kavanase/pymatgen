@@ -54,6 +54,30 @@ __copyright__ = "Copyright 2011, The Materials Project"
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Note: there are multiple releases of the {LDA,PBE} {52,54} POTCARs
+#     the original (UNIVIE) releases include no SHA256 hashes nor COPYR fields
+#     in the PSCTR/header field.
+# We indicate the older release in `functional_dir` as PBE_52, PBE_54, LDA_52, LDA_54.
+# The newer release is indicated as PBE_52_W_HASH, etc.
+POTCAR_FUNCTIONAL_MAP: dict[str, str] = {
+    "PBE": "POT_GGA_PAW_PBE",
+    "PBE_52": "POT_GGA_PAW_PBE_52",
+    "PBE_52_W_HASH": "POTPAW_PBE_52",
+    "PBE_54": "POT_GGA_PAW_PBE_54",
+    "PBE_54_W_HASH": "POTPAW_PBE_54",
+    "PBE_64": "POT_PAW_PBE_64",
+    "LDA": "POT_LDA_PAW",
+    "LDA_52": "POT_LDA_PAW_52",
+    "LDA_52_W_HASH": "POTPAW_LDA_52",
+    "LDA_54": "POT_LDA_PAW_54",
+    "LDA_54_W_HASH": "POTPAW_LDA_54",
+    "LDA_64": "POT_LDA_PAW_64",
+    "PW91": "POT_GGA_PAW_PW91",
+    "LDA_US": "POT_LDA_US",
+    "PW91_US": "POT_GGA_US_PW91",
+    "Perdew_Zunger81": "POT_LDA_PAW",
+}
+
 
 class Poscar(MSONable):
     """Represent the data in a POSCAR or CONTCAR file.
@@ -970,6 +994,7 @@ class Incar(UserDict, MSONable):
             "LANGEVIN_GAMMA",
             "QUAD_EFG",
             "EINT",
+            "LATTICE_CONSTRAINTS",
         )
         bool_keys = (
             "LDAU",
@@ -1021,23 +1046,27 @@ class Incar(UserDict, MSONable):
         # String keywords to read "as is" (no case transformation, only stripped)
         as_is_str_keys = ("SYSTEM",)
 
-        def smart_int_or_float(num_str: str) -> float:
+        def smart_int_or_float_bool(str_: str) -> float | int | bool:
             """Determine whether a string represents an integer or a float."""
-            if "." in num_str or "e" in num_str.lower():
-                return float(num_str)
-            return int(num_str)
+            if str_.lower().startswith(".t") or str_.lower().startswith("t"):
+                return True
+            if str_.lower().startswith(".f") or str_.lower().startswith("f"):
+                return False
+            if "." in str_ or "e" in str_.lower():
+                return float(str_)
+            return int(str_)
 
         try:
             if key in list_keys:
                 output = []
-                tokens = re.findall(r"(-?\d+\.?\d*)\*?(-?\d+\.?\d*)?\*?(-?\d+\.?\d*)?", val)
+                tokens = re.findall(r"(-?\d+\.?\d*|[\.A-Z]+)\*?(-?\d+\.?\d*|[\.A-Z]+)?\*?(-?\d+\.?\d*|[\.A-Z]+)?", val)
                 for tok in tokens:
                     if tok[2] and "3" in tok[0]:
-                        output.extend([smart_int_or_float(tok[2])] * int(tok[0]) * int(tok[1]))
+                        output.extend([smart_int_or_float_bool(tok[2])] * int(tok[0]) * int(tok[1]))
                     elif tok[1]:
-                        output.extend([smart_int_or_float(tok[1])] * int(tok[0]))
+                        output.extend([smart_int_or_float_bool(tok[1])] * int(tok[0]))
                     else:
-                        output.append(smart_int_or_float(tok[0]))
+                        output.append(smart_int_or_float_bool(tok[0]))
                 return output
 
             if key in bool_keys:
@@ -1935,29 +1964,7 @@ class PotcarSingle:
     are raised if validation fails.
     """
 
-    # Note: there are multiple releases of the {LDA,PBE} {52,54} POTCARs
-    #     the original (UNIVIE) releases include no SHA256 hashes nor COPYR fields
-    #     in the PSCTR/header field.
-    # We indicate the older release in `functional_dir` as PBE_52, PBE_54, LDA_52, LDA_54.
-    # The newer release is indicated as PBE_52_W_HASH, etc.
-    functional_dir: ClassVar[dict[str, str]] = {
-        "PBE": "POT_GGA_PAW_PBE",
-        "PBE_52": "POT_GGA_PAW_PBE_52",
-        "PBE_52_W_HASH": "POTPAW_PBE_52",
-        "PBE_54": "POT_GGA_PAW_PBE_54",
-        "PBE_54_W_HASH": "POTPAW_PBE_54",
-        "PBE_64": "POT_PAW_PBE_64",
-        "LDA": "POT_LDA_PAW",
-        "LDA_52": "POT_LDA_PAW_52",
-        "LDA_52_W_HASH": "POTPAW_LDA_52",
-        "LDA_54": "POT_LDA_PAW_54",
-        "LDA_54_W_HASH": "POTPAW_LDA_54",
-        "LDA_64": "POT_LDA_PAW_64",
-        "PW91": "POT_GGA_PAW_PW91",
-        "LDA_US": "POT_LDA_US",
-        "PW91_US": "POT_GGA_US_PW91",
-        "Perdew_Zunger81": "POT_LDA_PAW",
-    }
+    functional_dir: ClassVar[dict[str, str]] = POTCAR_FUNCTIONAL_MAP
 
     functional_tags: ClassVar[dict[str, dict[Literal["name", "class"], str]]] = {
         "pe": {"name": "PBE", "class": "GGA"},
